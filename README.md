@@ -64,9 +64,5 @@ Prévision/
 │   ├── indicateurs_Pauvrete.xlsx       # Raw P0, P1, P2 & Gini data (1996–2024)
 │   └── donnees_interpolees.xlsx        # Spline‐interpolated annual series
 ├── notebooks/
-│   ├── project.Rmd                     # Data preparation & interpolation
-│   └── Projet_Prévision.Rmd            # Model fitting & forecasting
-├── output/
-│   ├── Projet_Prévision.html           # Rendered notebook
-│   └── Projet_Méthode_Prévision.pdf    # Final project report
+│   └── Projet_Prévision.Rmd            # Data preparation & interpolation and Model fitting & forecasting
 └── README.md                           # ← You are here
