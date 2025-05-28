@@ -1,12 +1,8 @@
 # Poverty & Inequality Forecasting in Mauritania
 ## 📖 Abstract
-
 Poverty remains a critical challenge for Mauritania’s socio-economic development. This project models and forecasts four key indicators—poverty headcount (P0), poverty gap (P1), poverty severity (P2) and the Gini index—over 1996–2030. We interpolate quad-annual survey data (2000, 2004, 2008, 2014, 2019) into annual series via cubic splines, then fit polynomial trends (degrees 1–3), choosing the best by Akaike’s Information Criterion (AIC), and evaluate forecast accuracy using RMSE, MAE, MAPE and Theil’s U :contentReference[oaicite:0]{index=0}.
-
 ## 📝 Introduction
-
 Understanding and anticipating poverty trends is vital for evidence-based policy. This report constructs and forecasts:
-
 - **P0** – incidence (headcount) of poverty  
 - **P1** – depth (gap) of poverty  
 - **P2** – severity of poverty  
