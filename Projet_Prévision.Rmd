@@ -1,0 +1,1186 @@
+---
+title: "Projet Méthode de prévision"
+author: "B034159"
+date: "2025-03-11"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    fig_crop: false
+---
+# Chunk d'initialisation knitr
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+## .Library nécessaire
+```{r}
+library(readxl)
+library(dplyr)
+library(zoo)
+library(ggplot2)
+library(RColorBrewer)
+library(lmtest)
+# 1) Importer les données depuis le fichier Excel
+donnees <- read_excel("indicateurs_Pauvrété.xlsx")
+
+# 2) Vérifier rapidement la structure et le contenu
+head(donnees)
+```
+## Création des années manquantes
+```{r}
+toutes_les_annees <- data.frame(Années = 1996:2024)
+
+# 4) Fusionner (jointure par "Années") pour insérer des lignes NA
+#    sur les années qui manquent dans `donnees`.
+complet <- full_join(toutes_les_annees, donnees, by = "Années")
+
+# 5) Trier par année (au cas où l'ordre ne soit plus garanti)
+complet <- complet[order(complet$Années), ]
+# 6) Vérifier qu'on a bien des lignes NA sur les intervalles manquants
+print(complet)
+
+```
+
+## Interpolation (méthode spline)
+```{r}
+# Interpolation pour la Prévalence de la pauvreté (P0)
+complet$`Prévalence de la pauvreté (P0)` <- with(
+  complet,
+  spline(
+    x      = Années,
+    y      = `Prévalence de la pauvreté (P0)`,
+    xout   = Années,
+    method = "natural"  # Vous pouvez changer "natural" en "fmm", "periodic", etc.
+  )$y
+)
+
+# Interpolation pour la Profondeur de la pauvreté (P1)
+complet$`Profondeur de la pauvreté (P1)` <- with(
+  complet,
+  spline(
+    x      = Années,
+    y      = `Profondeur de la pauvreté (P1)`,
+    xout   = Années,
+    method = "natural"
+  )$y
+)
+
+# Interpolation pour la Sévérité de la pauvreté (P2)
+complet$`Sévérité de la pauvreté (P2)` <- with(
+  complet,
+  spline(
+    x      = Années,
+    y      = `Sévérité de la pauvreté (P2)`,
+    xout   = Années,
+    method = "natural"
+  )$y
+)
+
+# Interpolation pour l'Indice de Gini
+complet$`Indice de Gini` <- with(
+  complet,
+  spline(
+    x      = Années,
+    y      = `Indice de Gini`,
+    xout   = Années,
+    method = "natural"
+  )$y
+)
+
+# Affichage du résultat final, interpolé
+print(complet)
+```
+
+
+
+## Construction des équation de trend 
+```{r}
+# 2) Créer la colonne Trend
+complet$Trend <- complet$Années - 1995
+################################################################################
+# 3) RÉGRESSIONS SUR "PRÉVALENCE DE LA PAUVRETÉ (P0)"
+################################################################################
+modele_p0_lin  <- lm(`Prévalence de la pauvreté (P0)` ~ Trend, data = complet)
+modele_p0_deg2 <- lm(`Prévalence de la pauvreté (P0)` ~ Trend + I(Trend^2), data = complet)
+modele_p0_deg3 <- lm(`Prévalence de la pauvreté (P0)` ~ Trend + I(Trend^2) + I(Trend^3), data = complet)
+
+cat("=== PREVALENCE DE LA PAUVRETÉ (P0) ===\n")
+summary(modele_p0_lin)
+summary(modele_p0_deg2)
+summary(modele_p0_deg3)
+
+################################################################################
+# 4) RÉGRESSIONS SUR "PROFONDEUR DE LA PAUVRETÉ (P1)"
+################################################################################
+modele_p1_lin  <- lm(`Profondeur de la pauvreté (P1)` ~ Trend, data = complet)
+modele_p1_deg2 <- lm(`Profondeur de la pauvreté (P1)` ~ Trend + I(Trend^2), data = complet)
+modele_p1_deg3 <- lm(`Profondeur de la pauvreté (P1)` ~ Trend + I(Trend^2) + I(Trend^3), data = complet)
+
+cat("\n=== PROFONDEUR DE LA PAUVRETÉ (P1) ===\n")
+summary(modele_p1_lin)
+summary(modele_p1_deg2)
+summary(modele_p1_deg3)
+
+################################################################################
+# 5) RÉGRESSIONS SUR "SÉVÉRITÉ DE LA PAUVRETÉ (P2)"
+################################################################################
+modele_p2_lin  <- lm(`Sévérité de la pauvreté (P2)` ~ Trend, data = complet)
+modele_p2_deg2 <- lm(`Sévérité de la pauvreté (P2)` ~ Trend + I(Trend^2), data = complet)
+modele_p2_deg3 <- lm(`Sévérité de la pauvreté (P2)` ~ Trend + I(Trend^2) + I(Trend^3), data = complet)
+
+cat("\n=== SÉVÉRITÉ DE LA PAUVRETÉ (P2) ===\n")
+summary(modele_p2_lin)
+summary(modele_p2_deg2)
+summary(modele_p2_deg3)
+
+################################################################################
+# 6) RÉGRESSIONS SUR "INDICE DE GINI"
+################################################################################
+modele_gini_lin  <- lm(`Indice de Gini` ~ Trend, data = complet)
+modele_gini_deg2 <- lm(`Indice de Gini` ~ Trend + I(Trend^2), data = complet)
+modele_gini_deg3 <- lm(`Indice de Gini` ~ Trend + I(Trend^2) + I(Trend^3), data = complet)
+
+cat("\n=== INDICE DE GINI ===\n")
+summary(modele_gini_lin)
+summary(modele_gini_deg2)
+summary(modele_gini_deg3)
+
+
+
+```
+## Afficher les AIC pour tous les modèles (P0, P1, P2, Gini) 
+```{r}
+cat("\n=== PREVALENCE (P0) ===\n")
+cat("AIC (lin)  :", AIC(modele_p0_lin),  "\n")
+cat("AIC (deg2) :", AIC(modele_p0_deg2), "\n")
+cat("AIC (deg3) :", AIC(modele_p0_deg3), "\n")
+
+cat("\n=== PROFONDEUR (P1) ===\n")
+cat("AIC (lin)  :", AIC(modele_p1_lin),  "\n")
+cat("AIC (deg2) :", AIC(modele_p1_deg2), "\n")
+cat("AIC (deg3) :", AIC(modele_p1_deg3), "\n")
+
+cat("\n=== SÉVÉRITÉ (P2) ===\n")
+cat("AIC (lin)  :", AIC(modele_p2_lin),  "\n")
+cat("AIC (deg2) :", AIC(modele_p2_deg2), "\n")
+cat("AIC (deg3) :", AIC(modele_p2_deg3), "\n")
+
+cat("\n=== INDICE DE GINI ===\n")
+cat("AIC (lin)  :", AIC(modele_gini_lin),  "\n")
+cat("AIC (deg2) :", AIC(modele_gini_deg2), "\n")
+cat("AIC (deg3) :", AIC(modele_gini_deg3), "\n")
+```
+## Prévalence de la pauvreté (P0)
+```{r}
+# ------------------------------------------------------------------------------
+# 1) Calcul des prédictions (période observée) pour chaque modèle
+# ------------------------------------------------------------------------------
+complet$pred_lin  <- predict(modele_p0_lin,  newdata = complet)
+complet$pred_deg2 <- predict(modele_p0_deg2, newdata = complet)
+complet$pred_deg3 <- predict(modele_p0_deg3, newdata = complet)
+
+# Visualisation : Observé vs. Ajustements
+ggplot(complet, aes(x = Années)) +
+  geom_line(aes(y = `Prévalence de la pauvreté (P0)`, color = "Série observée"), size = 1) +
+  geom_line(aes(y = pred_lin,  color = "Tendance linéaire"),  size = 1, linetype = "dashed") +
+  geom_line(aes(y = pred_deg2, color = "Tendance degré 2"),   size = 1, linetype = "dotdash") +
+  geom_line(aes(y = pred_deg3, color = "Tendance degré 3"),   size = 1, linetype = "twodash") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Prévalence de la pauvreté (P0) : Observée vs. Ajustements",
+    x = "Années",
+    y = "Prévalence (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold"),
+    legend.title    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# ------------------------------------------------------------------------------
+# 2) Choix automatique du meilleur modèle (AIC)
+# ------------------------------------------------------------------------------
+models_list <- list(
+  lin  = modele_p0_lin,
+  deg2 = modele_p0_deg2,
+  deg3 = modele_p0_deg3
+)
+best_key <- names(which.min(sapply(models_list, AIC)))
+meilleur_modele <- models_list[[best_key]]
+cat("Modèle retenu (AIC min) :", best_key, "\n")
+
+# ------------------------------------------------------------------------------
+# 3) Prévisions jusqu'en 2030 + fusion
+# ------------------------------------------------------------------------------
+nouvelle_plage_annees <- 2024:2030
+new_data <- data.frame(
+  Années = nouvelle_plage_annees,
+  # Ajustez si vous avez Trend = Années - 1995
+  Trend  = nouvelle_plage_annees - 1995
+)
+
+df_plot <- bind_rows(
+  complet %>%
+    select(Années, Trend, `Prévalence de la pauvreté (P0)`) %>%
+    rename(Prevalence_Obs = `Prévalence de la pauvreté (P0)`),
+  new_data %>%
+    mutate(Prevalence_Obs = NA)
+)
+
+# ------------------------------------------------------------------------------
+# 4) Prévision + intervalle (±2 SE)
+# ------------------------------------------------------------------------------
+pred_obj <- predict(meilleur_modele, newdata = df_plot, se.fit = TRUE)
+df_plot$Prevalence_Pred  <- pred_obj$fit
+df_plot$Prevalence_Upper <- pred_obj$fit + 2 * pred_obj$se.fit
+df_plot$Prevalence_Lower <- pred_obj$fit - 2 * pred_obj$se.fit
+
+# ------------------------------------------------------------------------------
+# 5) Calcul des indicateurs (période observée)
+# ------------------------------------------------------------------------------
+df_obs <- df_plot %>% filter(!is.na(Prevalence_Obs))
+err <- df_obs$Prevalence_Obs - df_obs$Prevalence_Pred
+
+RMSE  <- sqrt(mean(err^2))
+MAE   <- mean(abs(err))
+MAPE  <- mean(abs(err / df_obs$Prevalence_Obs) * 100)
+
+sMAPE <- 100 * mean(
+  abs(err) /
+  ((abs(df_obs$Prevalence_Obs) + abs(df_obs$Prevalence_Pred)) / 2)
+)
+
+# ------------------------------------------------------------------------------
+# 6) Fonction theil_stats_offset : tolérance pour éviter un bias = 0
+#    + Theil U2 (comparaison vs. random walk)
+# ------------------------------------------------------------------------------
+theil_stats_offset <- function(actual, forecast, tol = 1e-12, bias_floor = 1e-9) {
+  idx <- !is.na(actual) & !is.na(forecast)
+  y    <- actual[idx]
+  yhat <- forecast[idx]
+  
+  if (length(y) < 2) {
+    return(list(
+      theil_U   = NA,
+      bias_prop = NA,
+      var_prop  = NA,
+      cov_prop  = NA,
+      theil_U2  = NA
+    ))
+  }
+
+  mse <- mean((yhat - y)^2)
+  U   <- sqrt(mse) / sqrt(mean(y^2))
+
+  # BIAS PROPORTION => offset si diff ~ 0
+  diff_means <- mean(yhat) - mean(y)
+  if (abs(diff_means) < tol) {
+    diff_means <- sign(diff_means) * bias_floor
+  }
+  UM <- (diff_means^2) / mse
+
+  # VARIANCE
+  diff_sd <- sd(yhat) - sd(y)
+  US <- (diff_sd^2) / mse
+
+  UC <- 1 - UM - US
+
+  # THEIL U2 => random walk
+  y_naive <- c(NA, y[-length(y)])
+  y_cut       <- y[-1]
+  yhat_cut    <- yhat[-1]
+  y_naive_cut <- y_naive[-1]
+
+  SSE_model <- sum((y_cut - yhat_cut)^2)
+  SSE_naive <- sum((y_cut - y_naive_cut)^2)
+  if (SSE_naive < tol) SSE_naive <- tol
+  U2 <- sqrt(SSE_model / SSE_naive)
+
+  list(
+    theil_U   = U,
+    bias_prop = UM,
+    var_prop  = US,
+    cov_prop  = UC,
+    theil_U2  = U2
+  )
+}
+
+theil <- theil_stats_offset(df_obs$Prevalence_Obs, df_obs$Prevalence_Pred)
+
+# ------------------------------------------------------------------------------
+# 7) Label de statistiques style EViews
+# ------------------------------------------------------------------------------
+label_stats <- paste0(
+  "Forecast: P0_F\n",
+  "Actual: P0\n",
+  "Forecast sample: ", min(df_plot$Années), "–", max(df_plot$Années), "\n",
+  "Included observations: ", nrow(df_obs), "\n",
+  "Root Mean Squared Error: ", formatC(RMSE, format = "e", digits = 2), "\n",
+  "Mean Absolute Error:     ", formatC(MAE,  format = "e", digits = 2), "\n",
+  "Mean Abs. Percent Error: ", round(MAPE, 2), "\n",
+  "Theil Inequality Coef.:  ", round(theil$theil_U, 5), "\n",
+  "   Bias Proportion:      ", formatC(theil$bias_prop, format="f", digits=8), "\n",
+  "   Variance Proportion:  ", round(theil$var_prop, 6), "\n",
+  "   Covariance Prop.:     ", round(theil$cov_prop, 6), "\n",
+  "Theil U2 Coefficient:    ", round(theil$theil_U2, 5), "\n",
+  "Symmetric MAPE:          ", round(sMAPE, 2)
+)
+
+# ------------------------------------------------------------------------------
+# 8) Graphique final : Observé + Prévision + Intervalle ±2SE + label
+# ------------------------------------------------------------------------------
+g <- ggplot(df_plot, aes(x = Années)) +
+  geom_ribbon(aes(ymin = Prevalence_Lower, ymax = Prevalence_Upper),
+              fill = "lightblue", alpha = 0.3) +
+  geom_line(aes(y = Prevalence_Pred, color = "P0_F"), size = 1) +
+  geom_line(
+    data = filter(df_plot, !is.na(Prevalence_Obs)),
+    aes(y = Prevalence_Obs, color = "P0"),
+    size = 1
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Prévalence de la pauvreté (P0) : Observée et Prévisions (±2 SE)",
+    x     = "Années",
+    y     = "Prévalence (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    legend.title     = element_text(face = "bold"),
+    legend.position  = c(0.15, 0.8),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+
+# Ajuster x,y pour placer correctement le label
+g + geom_label(
+  x = 2015,
+  y = 45,
+  label = label_stats,
+  size = 3,
+  label.padding = unit(0.3, "lines"),
+  label.r = unit(0.25, "lines"),
+  label.size = 0.5,
+  color = "black",
+  fill = "white",
+  fontface = "plain",
+  hjust = 0
+)
+
+```
+
+## Prévalence de la pauvreté (P0)
+```{r}
+# ------------------------------------------------------------------------------
+# 1) Calcul des prédictions (période observée) pour chaque modèle
+# ------------------------------------------------------------------------------
+complet$pred_lin  <- predict(modele_p0_lin,  newdata = complet)
+complet$pred_deg2 <- predict(modele_p0_deg2, newdata = complet)
+complet$pred_deg3 <- predict(modele_p0_deg3, newdata = complet)
+
+# Visualisation : Observé vs. Ajustements
+ggplot(complet, aes(x = Années)) +
+  geom_line(aes(y = `Prévalence de la pauvreté (P0)`, color = "Série observée"), size = 1) +
+  geom_line(aes(y = pred_lin,  color = "Tendance linéaire"),  size = 1, linetype = "dashed") +
+  geom_line(aes(y = pred_deg2, color = "Tendance degré 2"),   size = 1, linetype = "dotdash") +
+  geom_line(aes(y = pred_deg3, color = "Tendance degré 3"),   size = 1, linetype = "twodash") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Prévalence de la pauvreté (P0) : Observée vs. Ajustements",
+    x = "Années",
+    y = "Prévalence (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold"),
+    legend.title    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# ------------------------------------------------------------------------------
+# 2) Choix automatique du meilleur modèle (AIC)
+# ------------------------------------------------------------------------------
+models_list <- list(
+  lin  = modele_p0_lin,
+  deg2 = modele_p0_deg2,
+  deg3 = modele_p0_deg3
+)
+best_key <- names(which.min(sapply(models_list, AIC)))
+meilleur_modele <- models_list[[best_key]]
+cat("Modèle retenu (AIC min) :", best_key, "\n")
+
+# ------------------------------------------------------------------------------
+# 3) Prévisions jusqu'en 2030 + fusion
+# ------------------------------------------------------------------------------
+nouvelle_plage_annees <- 2024:2030
+new_data <- data.frame(
+  Années = nouvelle_plage_annees,
+  # Ajustez si vous avez Trend = Années - 1995
+  Trend  = nouvelle_plage_annees - 1995
+)
+
+df_plot <- bind_rows(
+  complet %>%
+    select(Années, Trend, `Prévalence de la pauvreté (P0)`) %>%
+    rename(Prevalence_Obs = `Prévalence de la pauvreté (P0)`),
+  new_data %>%
+    mutate(Prevalence_Obs = NA)
+)
+
+# ------------------------------------------------------------------------------
+# 4) Prévision + intervalle (±2 SE)
+# ------------------------------------------------------------------------------
+pred_obj <- predict(meilleur_modele, newdata = df_plot, se.fit = TRUE)
+df_plot$Prevalence_Pred  <- pred_obj$fit
+df_plot$Prevalence_Upper <- pred_obj$fit + 2 * pred_obj$se.fit
+df_plot$Prevalence_Lower <- pred_obj$fit - 2 * pred_obj$se.fit
+
+# ------------------------------------------------------------------------------
+# 5) Calcul des indicateurs (période observée)
+# ------------------------------------------------------------------------------
+df_obs <- df_plot %>% filter(!is.na(Prevalence_Obs))
+err <- df_obs$Prevalence_Obs - df_obs$Prevalence_Pred
+
+RMSE  <- sqrt(mean(err^2))
+MAE   <- mean(abs(err))
+MAPE  <- mean(abs(err / df_obs$Prevalence_Obs) * 100)
+
+sMAPE <- 100 * mean(
+  abs(err) /
+  ((abs(df_obs$Prevalence_Obs) + abs(df_obs$Prevalence_Pred)) / 2)
+)
+
+# ------------------------------------------------------------------------------
+# 6) Fonction theil_stats_offset : tolérance pour éviter un bias = 0
+#    + Theil U2 (comparaison vs. random walk)
+# ------------------------------------------------------------------------------
+theil_stats_offset <- function(actual, forecast, tol = 1e-12, bias_floor = 1e-9) {
+  idx <- !is.na(actual) & !is.na(forecast)
+  y    <- actual[idx]
+  yhat <- forecast[idx]
+  
+  if (length(y) < 2) {
+    return(list(
+      theil_U   = NA,
+      bias_prop = NA,
+      var_prop  = NA,
+      cov_prop  = NA,
+      theil_U2  = NA
+    ))
+  }
+
+  mse <- mean((yhat - y)^2)
+  U   <- sqrt(mse) / sqrt(mean(y^2))
+
+  # BIAS PROPORTION => offset si diff ~ 0
+  diff_means <- mean(yhat) - mean(y)
+  if (abs(diff_means) < tol) {
+    diff_means <- sign(diff_means) * bias_floor
+  }
+  UM <- (diff_means^2) / mse
+
+  # VARIANCE
+  diff_sd <- sd(yhat) - sd(y)
+  US <- (diff_sd^2) / mse
+
+  UC <- 1 - UM - US
+
+  # THEIL U2 => random walk
+  y_naive <- c(NA, y[-length(y)])
+  y_cut       <- y[-1]
+  yhat_cut    <- yhat[-1]
+  y_naive_cut <- y_naive[-1]
+
+  SSE_model <- sum((y_cut - yhat_cut)^2)
+  SSE_naive <- sum((y_cut - y_naive_cut)^2)
+  if (SSE_naive < tol) SSE_naive <- tol
+  U2 <- sqrt(SSE_model / SSE_naive)
+
+  list(
+    theil_U   = U,
+    bias_prop = UM,
+    var_prop  = US,
+    cov_prop  = UC,
+    theil_U2  = U2
+  )
+}
+
+theil <- theil_stats_offset(df_obs$Prevalence_Obs, df_obs$Prevalence_Pred)
+
+# ------------------------------------------------------------------------------
+# 7) Label de statistiques style EViews
+# ------------------------------------------------------------------------------
+label_stats <- paste0(
+  "Forecast: P0_F\n",
+  "Actual: P0\n",
+  "Forecast sample: ", min(df_plot$Années), "–", max(df_plot$Années), "\n",
+  "Included observations: ", nrow(df_obs), "\n",
+  "Root Mean Squared Error: ", formatC(RMSE, format = "e", digits = 2), "\n",
+  "Mean Absolute Error:     ", formatC(MAE,  format = "e", digits = 2), "\n",
+  "Mean Abs. Percent Error: ", round(MAPE, 2), "\n",
+  "Theil Inequality Coef.:  ", round(theil$theil_U, 5), "\n",
+  "   Bias Proportion:      ", formatC(theil$bias_prop, format="f", digits=8), "\n",
+  "   Variance Proportion:  ", round(theil$var_prop, 6), "\n",
+  "   Covariance Prop.:     ", round(theil$cov_prop, 6), "\n",
+  "Theil U2 Coefficient:    ", round(theil$theil_U2, 5), "\n",
+  "Symmetric MAPE:          ", round(sMAPE, 2)
+)
+
+# ------------------------------------------------------------------------------
+# 8) Graphique final : Observé + Prévision + Intervalle ±2SE + label
+# ------------------------------------------------------------------------------
+g <- ggplot(df_plot, aes(x = Années)) +
+  geom_ribbon(aes(ymin = Prevalence_Lower, ymax = Prevalence_Upper),
+              fill = "lightblue", alpha = 0.3) +
+  geom_line(aes(y = Prevalence_Pred, color = "P0_F"), size = 1) +
+  geom_line(
+    data = filter(df_plot, !is.na(Prevalence_Obs)),
+    aes(y = Prevalence_Obs, color = "P0"),
+    size = 1
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Prévalence de la pauvreté (P0) : Observée et Prévisions (±2 SE)",
+    x     = "Années",
+    y     = "Prévalence (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    legend.title     = element_text(face = "bold"),
+    legend.position  = c(0.15, 0.8),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+
+# Ajuster x,y pour placer correctement le label
+g + geom_label(
+  x = 2015,
+  y = 45,
+  label = label_stats,
+  size = 3,
+  label.padding = unit(0.3, "lines"),
+  label.r = unit(0.25, "lines"),
+  label.size = 0.5,
+  color = "black",
+  fill = "white",
+  fontface = "plain",
+  hjust = 0
+)
+
+```
+
+## Profondeur de la pauvreté (P1)
+```{r}
+# ------------------------------------------------------------------------------
+# 1) Calcul des prédictions pour chaque modèle sur la période observée
+# ------------------------------------------------------------------------------
+complet$pred_p1_lin  <- predict(modele_p1_lin,  newdata = complet)
+complet$pred_p1_deg2 <- predict(modele_p1_deg2, newdata = complet)
+complet$pred_p1_deg3 <- predict(modele_p1_deg3, newdata = complet)
+
+# Visualisation : Observé vs. Ajustements
+ggplot(complet, aes(x = Années)) +
+  geom_line(aes(y = `Profondeur de la pauvreté (P1)`, color = "Série observée"), size = 1) +
+  geom_line(aes(y = pred_p1_lin,  color = "Tendance linéaire"),  size = 1, linetype = "dashed") +
+  geom_line(aes(y = pred_p1_deg2, color = "Tendance degré 2"),   size = 1, linetype = "dotdash") +
+  geom_line(aes(y = pred_p1_deg3, color = "Tendance degré 3"),   size = 1, linetype = "twodash") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Profondeur de la pauvreté (P1) : Observée vs. Ajustements",
+    x     = "Années",
+    y     = "Profondeur (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold"),
+    legend.title    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# ------------------------------------------------------------------------------
+# 2) Choix automatique du meilleur modèle (AIC)
+# ------------------------------------------------------------------------------
+models_list_p1 <- list(
+  lin  = modele_p1_lin,
+  deg2 = modele_p1_deg2,
+  deg3 = modele_p1_deg3
+)
+best_key_p1 <- names(which.min(sapply(models_list_p1, AIC)))
+meilleur_modele_p1 <- models_list_p1[[best_key_p1]]
+cat("Modèle retenu (AIC min) pour P1 :", best_key_p1, "\n")
+
+# ------------------------------------------------------------------------------
+# 3) Prévisions jusqu'en 2030 + fusion
+# ------------------------------------------------------------------------------
+nouvelle_plage_annees <- 2024:2030
+new_data_p1 <- data.frame(
+  Années = nouvelle_plage_annees,
+  # Adaptez si Trend = Années - 1999 pour rester cohérent
+  Trend  = nouvelle_plage_annees - 1999
+)
+
+df_plot_p1 <- bind_rows(
+  complet %>%
+    select(Années, Trend, `Profondeur de la pauvreté (P1)`) %>%
+    rename(P1_Obs = `Profondeur de la pauvreté (P1)`),
+  new_data_p1 %>%
+    mutate(P1_Obs = NA)
+)
+
+# ------------------------------------------------------------------------------
+# 4) Prévision + intervalle (±2 SE)
+# ------------------------------------------------------------------------------
+pred_obj_p1 <- predict(meilleur_modele_p1, newdata = df_plot_p1, se.fit = TRUE)
+df_plot_p1$P1_Fit   <- pred_obj_p1$fit
+df_plot_p1$P1_Upper <- pred_obj_p1$fit + 2 * pred_obj_p1$se.fit
+df_plot_p1$P1_Lower <- pred_obj_p1$fit - 2 * pred_obj_p1$se.fit
+
+# ------------------------------------------------------------------------------
+# 5) Calcul des indicateurs (période observée)
+# ------------------------------------------------------------------------------
+df_obs_p1 <- df_plot_p1 %>% filter(!is.na(P1_Obs))
+resid_p1  <- df_obs_p1$P1_Obs - df_obs_p1$P1_Fit
+
+RMSE_p1 <- sqrt(mean(resid_p1^2))
+MAE_p1  <- mean(abs(resid_p1))
+MAPE_p1 <- mean(abs(resid_p1 / df_obs_p1$P1_Obs) * 100)
+
+sMAPE_p1 <- 100 * mean(
+  abs(resid_p1) /
+  ((abs(df_obs_p1$P1_Obs) + abs(df_obs_p1$P1_Fit)) / 2)
+)
+
+# ------------------------------------------------------------------------------
+# 6) Fonction theil_stats_offset : tolérance pour éviter un bias = 0
+#    + Theil U2 (comparaison vs. random walk)
+# ------------------------------------------------------------------------------
+theil_stats_offset <- function(actual, forecast, tol = 1e-12, bias_floor = 1e-9) {
+  idx <- !is.na(actual) & !is.na(forecast)
+  y    <- actual[idx]
+  yhat <- forecast[idx]
+  
+  if (length(y) < 2) {
+    return(list(
+      theil_U   = NA,
+      bias_prop = NA,
+      var_prop  = NA,
+      cov_prop  = NA,
+      theil_U2  = NA
+    ))
+  }
+
+  # MSE
+  mse <- mean((yhat - y)^2)
+  U   <- sqrt(mse) / sqrt(mean(y^2))
+
+  # BIAS PROPORTION (UM) => offset si diff ~0
+  diff_means <- mean(yhat) - mean(y)
+  if (abs(diff_means) < tol) {
+    diff_means <- sign(diff_means) * bias_floor
+  }
+  UM <- (diff_means^2) / mse
+
+  # VARIANCE PROPORTION
+  diff_sd <- sd(yhat) - sd(y)
+  US <- (diff_sd^2) / mse
+
+  # COVARIANCE
+  UC <- 1 - UM - US
+
+  # THEIL U2 => random walk naïf
+  y_naive <- c(NA, y[-length(y)])
+  y_cut       <- y[-1]
+  yhat_cut    <- yhat[-1]
+  y_naive_cut <- y_naive[-1]
+
+  SSE_model <- sum((y_cut - yhat_cut)^2)
+  SSE_naive <- sum((y_cut - y_naive_cut)^2)
+  if (SSE_naive < tol) SSE_naive <- tol
+  U2 <- sqrt(SSE_model / SSE_naive)
+
+  list(
+    theil_U   = U,
+    bias_prop = UM,
+    var_prop  = US,
+    cov_prop  = UC,
+    theil_U2  = U2
+  )
+}
+
+theil_p1 <- theil_stats_offset(df_obs_p1$P1_Obs, df_obs_p1$P1_Fit)
+
+# ------------------------------------------------------------------------------
+# 7) Préparation du label de statistiques (style EViews)
+# ------------------------------------------------------------------------------
+label_stats_p1 <- paste0(
+  "Forecast: P1_F\n",
+  "Actual: P1\n",
+  "Forecast sample: ", min(df_plot_p1$Années), "–", max(df_plot_p1$Années), "\n",
+  "Included observations: ", nrow(df_obs_p1), "\n",
+  "Root Mean Squared Error: ", formatC(RMSE_p1, format = "e", digits = 2), "\n",
+  "Mean Absolute Error:     ", formatC(MAE_p1,  format = "e", digits = 2), "\n",
+  "Mean Abs. Percent Error: ", round(MAPE_p1, 2), "\n",
+  "Theil Inequality Coef.:  ", round(theil_p1$theil_U, 5), "\n",
+  "   Bias Proportion:      ", formatC(theil_p1$bias_prop, format="f", digits=8), "\n",
+  "   Variance Proportion:  ", round(theil_p1$var_prop, 6), "\n",
+  "   Covariance Prop.:     ", round(theil_p1$cov_prop, 6), "\n",
+  "Theil U2 Coefficient:    ", round(theil_p1$theil_U2, 5), "\n",
+  "Symmetric MAPE:          ", round(sMAPE_p1, 2)
+)
+
+# ------------------------------------------------------------------------------
+# 8) Graphique final : Observé + Prévision + Intervalle ±2 SE + label
+# ------------------------------------------------------------------------------
+g_p1 <- ggplot(df_plot_p1, aes(x = Années)) +
+  geom_ribbon(aes(ymin = P1_Lower, ymax = P1_Upper),
+              fill = "lightblue", alpha = 0.3) +
+  geom_line(aes(y = P1_Fit, color = "P1_F"), size = 1) +
+  geom_line(
+    data = filter(df_plot_p1, !is.na(P1_Obs)),
+    aes(y = P1_Obs, color = "P1"),
+    size = 1
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Profondeur de la pauvreté (P1) : Observée et Prévisions (±2 SE)",
+    x     = "Années",
+    y     = "Profondeur (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    legend.title     = element_text(face = "bold"),
+    legend.position  = c(0.15, 0.8),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+
+# Ajuster position x,y en fonction de vos données
+g_p1 + geom_label(
+  x = 2015,
+  y = 18,
+  label = label_stats_p1,
+  size = 3,
+  label.padding = unit(0.3, "lines"),
+  label.r = unit(0.25, "lines"),
+  label.size = 0.5,
+  color = "black",
+  fill = "white",
+  fontface = "plain",
+  hjust = 0
+)
+
+
+
+
+```
+
+## Sévérité de la pauvreté (P2)
+```{r}
+# ------------------------------------------------------------------------------
+# 1) Calcul des prédictions pour chaque modèle sur la période observée
+# ------------------------------------------------------------------------------
+complet$pred_p2_lin  <- predict(modele_p2_lin,  newdata = complet)
+complet$pred_p2_deg2 <- predict(modele_p2_deg2, newdata = complet)
+complet$pred_p2_deg3 <- predict(modele_p2_deg3, newdata = complet)
+
+# Visu rapide : Observé vs Ajustements
+ggplot(complet, aes(x = Années)) +
+  geom_line(aes(y = `Sévérité de la pauvreté (P2)`, color = "Série observée"), size = 1) +
+  geom_line(aes(y = pred_p2_lin,  color = "Tendance linéaire"),  size = 1, linetype = "dashed") +
+  geom_line(aes(y = pred_p2_deg2, color = "Tendance degré 2"),   size = 1, linetype = "dotdash") +
+  geom_line(aes(y = pred_p2_deg3, color = "Tendance degré 3"),   size = 1, linetype = "twodash") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Sévérité de la pauvreté (P2) : Observée vs. Ajustements",
+    x     = "Années",
+    y     = "Sévérité (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold"),
+    legend.title    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# ------------------------------------------------------------------------------
+# 2) Choix automatique du meilleur modèle selon AIC
+# ------------------------------------------------------------------------------
+models_list_p2 <- list(
+  lin  = modele_p2_lin,
+  deg2 = modele_p2_deg2,
+  deg3 = modele_p2_deg3
+)
+best_key_p2 <- names(which.min(sapply(models_list_p2, AIC)))
+meilleur_modele_p2 <- models_list_p2[[best_key_p2]]
+cat("Modèle retenu (AIC min) pour P2 :", best_key_p2, "\n")
+
+# ------------------------------------------------------------------------------
+# 3) Construire les prévisions jusqu'en 2030 + fusion
+# ------------------------------------------------------------------------------
+nouvelle_plage_annees <- 2024:2030
+new_data_p2 <- data.frame(
+  Années = nouvelle_plage_annees,
+  Trend  = nouvelle_plage_annees - 1999  # adapter si nécessaire
+)
+
+df_plot_p2 <- bind_rows(
+  complet %>%
+    select(Années, Trend, `Sévérité de la pauvreté (P2)`) %>%
+    rename(P2_Obs = `Sévérité de la pauvreté (P2)`),
+  new_data_p2 %>%
+    mutate(P2_Obs = NA)
+)
+
+# ------------------------------------------------------------------------------
+# 4) Prévision + intervalle (±2 SE)
+# ------------------------------------------------------------------------------
+pred_obj_p2 <- predict(meilleur_modele_p2, newdata = df_plot_p2, se.fit = TRUE)
+df_plot_p2$P2_Fit   <- pred_obj_p2$fit
+df_plot_p2$P2_Upper <- pred_obj_p2$fit + 2 * pred_obj_p2$se.fit
+df_plot_p2$P2_Lower <- pred_obj_p2$fit - 2 * pred_obj_p2$se.fit
+
+# ------------------------------------------------------------------------------
+# 5) Calcul des indicateurs sur la période observée
+# ------------------------------------------------------------------------------
+df_obs_p2 <- df_plot_p2 %>% filter(!is.na(P2_Obs))
+resid_p2  <- df_obs_p2$P2_Obs - df_obs_p2$P2_Fit
+
+RMSE_p2 <- sqrt(mean(resid_p2^2))
+MAE_p2  <- mean(abs(resid_p2))
+MAPE_p2 <- mean(abs(resid_p2 / df_obs_p2$P2_Obs) * 100)
+
+sMAPE_p2 <- 100 * mean(
+  abs(resid_p2) / ((abs(df_obs_p2$P2_Obs) + abs(df_obs_p2$P2_Fit)) / 2)
+)
+
+# ------------------------------------------------------------------------------
+# 6) Fonction theil_stats_offset : TOLÉRANCE pour éviter le 0 strict
+#    + Theil U2 (comparaison vs random walk naïf)
+# ------------------------------------------------------------------------------
+theil_stats_offset <- function(actual, forecast, tol = 1e-12, bias_floor = 1e-9) {
+  idx <- !is.na(actual) & !is.na(forecast)
+  y    <- actual[idx]
+  yhat <- forecast[idx]
+
+  # Si moins de 2 obs, pas de RW possible
+  if (length(y) < 2) {
+    return(list(
+      theil_U   = NA,
+      bias_prop = NA,
+      var_prop  = NA,
+      cov_prop  = NA,
+      theil_U2  = NA
+    ))
+  }
+
+  # MSE
+  mse <- mean((yhat - y)^2)
+  U   <- sqrt(mse) / sqrt(mean(y^2))
+
+  # BIAS PROPORTION (UM) => force un minuscule offset si diff_means ~ 0
+  diff_means <- mean(yhat) - mean(y)
+  if (abs(diff_means) < tol) {
+    diff_means <- sign(diff_means) * bias_floor
+  }
+  UM <- (diff_means^2) / mse
+
+  # VARIANCE PROPORTION
+  diff_sd <- sd(yhat) - sd(y)
+  US <- (diff_sd^2) / mse
+
+  # COVARIANCE
+  UC <- 1 - UM - US
+
+  # THEIL U2 => random walk naïf
+  y_naive <- c(NA, y[-length(y)])
+  y_cut       <- y[-1]
+  yhat_cut    <- yhat[-1]
+  y_naive_cut <- y_naive[-1]
+
+  SSE_model <- sum((y_cut - yhat_cut)^2)
+  SSE_naive <- sum((y_cut - y_naive_cut)^2)
+  if (SSE_naive < tol) SSE_naive <- tol
+  U2 <- sqrt(SSE_model / SSE_naive)
+
+  list(
+    theil_U   = U,
+    bias_prop = UM,
+    var_prop  = US,
+    cov_prop  = UC,
+    theil_U2  = U2
+  )
+}
+
+theil_p2 <- theil_stats_offset(df_obs_p2$P2_Obs, df_obs_p2$P2_Fit)
+
+# ------------------------------------------------------------------------------
+# 7) Préparation du label style EViews
+# ------------------------------------------------------------------------------
+label_stats_p2 <- paste0(
+  "Forecast: P2_F\n",
+  "Actual: P2\n",
+  "Forecast sample: ", min(df_plot_p2$Années), "–", max(df_plot_p2$Années), "\n",
+  "Included observations: ", nrow(df_obs_p2), "\n",
+  "Root Mean Squared Error: ", formatC(RMSE_p2, format = "e", digits = 2), "\n",
+  "Mean Absolute Error:     ", formatC(MAE_p2,  format = "e", digits = 2), "\n",
+  "Mean Abs. Percent Error: ", round(MAPE_p2, 2), "\n",
+  "Theil Inequality Coef.:  ", round(theil_p2$theil_U, 5), "\n",
+  "   Bias Proportion:      ", formatC(theil_p2$bias_prop, format="f", digits=8), "\n",
+  "   Variance Proportion:  ", round(theil_p2$var_prop, 6), "\n",
+  "   Covariance Prop.:     ", round(theil_p2$cov_prop, 6), "\n",
+  "Theil U2 Coefficient:    ", round(theil_p2$theil_U2, 5), "\n",
+  "Symmetric MAPE:          ", round(sMAPE_p2, 2)
+)
+
+# ------------------------------------------------------------------------------
+# 8) Graphique final : Observé + Prévision + Intervalle ±2 SE + label
+# ------------------------------------------------------------------------------
+g_p2 <- ggplot(df_plot_p2, aes(x = Années)) +
+  geom_ribbon(aes(ymin = P2_Lower, ymax = P2_Upper),
+              fill = "lightblue", alpha = 0.3) +
+  geom_line(aes(y = P2_Fit, color = "P2_F"), size = 1) +
+  geom_line(
+    data = filter(df_plot_p2, !is.na(P2_Obs)),
+    aes(y = P2_Obs, color = "P2"),
+    size = 1
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Sévérité de la pauvreté (P2) : Observée et Prévisions (±2 SE)",
+    x     = "Années",
+    y     = "Sévérité (%)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    legend.title     = element_text(face = "bold"),
+    legend.position  = c(0.15, 0.8),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+
+# Ajustez x et y pour que le label ne chevauche pas la courbe
+g_p2 + geom_label(
+  x = 2018,
+  y = 9,
+  label = label_stats_p2,
+  size = 3,
+  label.padding = unit(0.3, "lines"),
+  label.r = unit(0.25, "lines"),
+  label.size = 0.5,
+  color = "black",
+  fill = "white",
+  fontface = "plain",
+  hjust = 0
+)
+
+
+```
+
+## Indice de Gini
+```{r}
+# ------------------------------------------------------------------------------
+# 1) Calcul des prédictions (période observée) pour chaque modèle
+# ------------------------------------------------------------------------------
+complet$pred_gini_lin  <- predict(modele_gini_lin,  newdata = complet)
+complet$pred_gini_deg2 <- predict(modele_gini_deg2, newdata = complet)
+complet$pred_gini_deg3 <- predict(modele_gini_deg3, newdata = complet)
+
+# Visualisation rapide : Observé vs Ajustements
+ggplot(complet, aes(x = Années)) +
+  geom_line(aes(y = `Indice de Gini`, color = "Série observée"), size = 1) +
+  geom_line(aes(y = pred_gini_lin,  color = "Tendance linéaire"),  size = 1, linetype = "dashed") +
+  geom_line(aes(y = pred_gini_deg2, color = "Tendance degré 2"),   size = 1, linetype = "dotdash") +
+  geom_line(aes(y = pred_gini_deg3, color = "Tendance degré 3"),   size = 1, linetype = "twodash") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Indice de Gini : Observé vs. Ajustements",
+    x     = "Années",
+    y     = "Gini (0–1)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title      = element_text(face = "bold"),
+    legend.title    = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# ------------------------------------------------------------------------------
+# 2) Choix automatique du meilleur modèle (AIC)
+# ------------------------------------------------------------------------------
+models_list_gini <- list(
+  lin  = modele_gini_lin,
+  deg2 = modele_gini_deg2,
+  deg3 = modele_gini_deg3
+)
+
+best_key_gini <- names(which.min(sapply(models_list_gini, AIC)))
+meilleur_modele_gini <- models_list_gini[[best_key_gini]]
+cat("Modèle retenu (AIC min) pour Gini :", best_key_gini, "\n")
+
+# ------------------------------------------------------------------------------
+# 3) Prévisions jusqu'en 2030 + fusion
+# ------------------------------------------------------------------------------
+# Adapter la définition de Trend (ex. Trend=Années-1999)
+nouvelle_plage_annees <- 2024:2030
+new_data_gini <- data.frame(
+  Années = nouvelle_plage_annees,
+  Trend  = nouvelle_plage_annees - 1995
+)
+
+df_plot_gini <- bind_rows(
+  complet %>%
+    select(Années, Trend, `Indice de Gini`) %>%
+    rename(Gini_Obs = `Indice de Gini`),
+  new_data_gini %>%
+    mutate(Gini_Obs = NA)
+)
+
+# ------------------------------------------------------------------------------
+# 4) Prévision + intervalle (±2 SE) avec le meilleur modèle
+# ------------------------------------------------------------------------------
+pred_obj_gini <- predict(meilleur_modele_gini, newdata = df_plot_gini, se.fit = TRUE)
+df_plot_gini$Gini_Fit   <- pred_obj_gini$fit
+df_plot_gini$Gini_Upper <- pred_obj_gini$fit + 2 * pred_obj_gini$se.fit
+df_plot_gini$Gini_Lower <- pred_obj_gini$fit - 2 * pred_obj_gini$se.fit
+
+# ------------------------------------------------------------------------------
+# 5) Calcul des indicateurs (RMSE, MAE, MAPE, sMAPE, Theil U, Theil U2)
+# ------------------------------------------------------------------------------
+df_obs_gini <- df_plot_gini %>% filter(!is.na(Gini_Obs))
+resid_gini  <- df_obs_gini$Gini_Obs - df_obs_gini$Gini_Fit
+
+RMSE_gini  <- sqrt(mean(resid_gini^2))
+MAE_gini   <- mean(abs(resid_gini))
+MAPE_gini  <- mean(abs(resid_gini / df_obs_gini$Gini_Obs) * 100)
+
+sMAPE_gini <- 100 * mean(
+  abs(resid_gini) / ((abs(df_obs_gini$Gini_Obs) + abs(df_obs_gini$Gini_Fit)) / 2)
+)
+
+# Fonction theil_stats_offset avec offset pour éviter Bias = 0
+theil_stats_offset <- function(actual, forecast, tol = 1e-12, bias_floor = 1e-9) {
+  idx <- !is.na(actual) & !is.na(forecast)
+  y    <- actual[idx]
+  yhat <- forecast[idx]
+
+  if (length(y) < 2) {
+    return(list(
+      theil_U   = NA, bias_prop = NA,
+      var_prop  = NA, cov_prop = NA,
+      theil_U2  = NA
+    ))
+  }
+  
+  # MSE
+  mse <- mean((yhat - y)^2)
+  U   <- sqrt(mse) / sqrt(mean(y^2))
+
+  # BIAS PROPORTION
+  diff_means <- mean(yhat) - mean(y)
+  if (abs(diff_means) < tol) {
+    diff_means <- sign(diff_means) * bias_floor
+  }
+  UM <- (diff_means^2) / mse
+
+  # Variance proportion
+  diff_sd <- sd(yhat) - sd(y)
+  US <- (diff_sd^2) / mse
+
+  # Covariance proportion
+  UC <- 1 - UM - US
+
+  # Theil U2 => random walk naïf
+  y_naive <- c(NA, y[-length(y)])
+  y_cut       <- y[-1]
+  yhat_cut    <- yhat[-1]
+  y_naive_cut <- y_naive[-1]
+
+  SSE_model <- sum((y_cut - yhat_cut)^2)
+  SSE_naive <- sum((y_cut - y_naive_cut)^2)
+  # Éviter division par 0
+  if (SSE_naive < tol) SSE_naive <- tol
+  U2 <- sqrt(SSE_model / SSE_naive)
+
+  list(
+    theil_U   = U,
+    bias_prop = UM,
+    var_prop  = US,
+    cov_prop  = UC,
+    theil_U2  = U2
+  )
+}
+
+theil_gini <- theil_stats_offset(df_obs_gini$Gini_Obs, df_obs_gini$Gini_Fit)
+
+# ------------------------------------------------------------------------------
+# 6) Préparation du label style EViews
+# ------------------------------------------------------------------------------
+label_stats_gini <- paste0(
+  "Forecast: Gini_F\n",
+  "Actual: Gini\n",
+  "Forecast sample: ", min(df_plot_gini$Années), "–", max(df_plot_gini$Années), "\n",
+  "Included observations: ", nrow(df_obs_gini), "\n",
+  "Root Mean Squared Error: ", formatC(RMSE_gini, format = "e", digits = 2), "\n",
+  "Mean Absolute Error:     ", formatC(MAE_gini,  format = "e", digits = 2), "\n",
+  "Mean Abs. Percent Error: ", round(MAPE_gini, 2), "\n",
+  "Theil Inequality Coef.:  ", round(theil_gini$theil_U, 5), "\n",
+  "   Bias Proportion:      ", formatC(theil_gini$bias_prop, format="f", digits=8), "\n",
+  "   Variance Proportion:  ", round(theil_gini$var_prop, 6), "\n",
+  "   Covariance Prop.:     ", round(theil_gini$cov_prop, 6), "\n",
+  "Theil U2 Coefficient:    ", round(theil_gini$theil_U2, 5), "\n",
+  "Symmetric MAPE:          ", round(sMAPE_gini, 2)
+)
+
+# ------------------------------------------------------------------------------
+# 7) Graphique final : Observé + Prévision + Intervalle ±2SE + label
+# ------------------------------------------------------------------------------
+g_gini <- ggplot(df_plot_gini, aes(x = Années)) +
+  geom_ribbon(aes(ymin = Gini_Lower, ymax = Gini_Upper),
+              fill = "lightblue", alpha = 0.3) +
+  geom_line(aes(y = Gini_Fit, color = "Gini_F"), size = 1) +
+  geom_line(
+    data = filter(df_plot_gini, !is.na(Gini_Obs)),
+    aes(y = Gini_Obs, color = "Gini"),
+    size = 1
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Indice de Gini : Observé et Prévisions (±2 SE)",
+    x     = "Années",
+    y     = "Gini (0–1)",
+    color = "Séries"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold"),
+    legend.title     = element_text(face = "bold"),
+    legend.position  = c(0.15, 0.8),
+    legend.background = element_rect(fill = "white", color = "black")
+  )
+
+# Ajuster x et y pour le label
+g_gini + geom_label(
+  x = 2017,
+  y = 0.36,
+  label = label_stats_gini,
+  size = 3,
+  label.padding = unit(0.3, "lines"),
+  label.r = unit(0.25, "lines"),
+  label.size = 0.5,
+  color = "black",
+  fill = "white",
+  fontface = "plain",
+  hjust = 0
+)
+
+```
+
